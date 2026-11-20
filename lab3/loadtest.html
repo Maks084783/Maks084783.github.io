@@ -59,7 +59,7 @@ function summary(){return{started:new Date(S.start).toISOString(),duration_s:Mat
 $('start').onclick=()=>{if(S.running)return;S.running=true;S.start=Date.now();$('state').textContent='тест идёт…';
  const vus={n:0,alive:0};let next=0;
  const tick=setInterval(()=>{const el=(Date.now()-S.start)/1000;const want=target(el);
-  while(next<want){vus.alive++;vu(next++,vus)}vus.n=want;if(want<next)next=want;render();
+  vus.n=want;while(next<want){vus.alive++;vu(next++,vus)}if(want<next)next=want;render();
   if(el>=TOTAL){S.running=false;clearInterval(tick);render();$('state').textContent='тест завершён';$('out').textContent=JSON.stringify(summary(),null,2);window.LOADTEST_RESULT=summary()}
   $('vu').textContent=want},1000)};
 window.LOADTEST=S;
