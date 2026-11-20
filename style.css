@@ -1,8 +1,8 @@
-/* ЛР 2.2: версия 1 — исходное состояние */
+/* ЛР 2.2: версия 2 — изменённый цвет */
 /* style.css для лабораторной работы */
 body {
     font-family: Arial, sans-serif;
-    background-color: lightblue;
+    background-color: lightcoral; /* Изменили цвет */
     color: #333;
     margin: 0;
     padding: 20px;
