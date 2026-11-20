@@ -1,0 +1,5 @@
+# ЛР 2.2: TTL для браузерного кэша (Cache-Control)
+/style.css
+  Cache-Control: public, max-age=600
+/images/*
+  Cache-Control: public, max-age=86400
