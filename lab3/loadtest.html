@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЛР 3.2 — генератор нагрузки</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+ table{border-collapse:collapse;width:100%;margin:10px 0}
+ td,th{border:1px solid #ccc;padding:4px 8px;text-align:left;font-size:14px}
+ #bar{height:14px;background:#ddd;border-radius:7px;overflow:hidden}
+ #bar div{height:100%;width:0;background:#3498db}
+ button{padding:8px 16px;font-size:15px}
+ pre{background:#111;color:#0f0;padding:10px;font-size:12px;max-height:220px;overflow:auto}
+</style>
+</head>
+<body>
+<header><h1>ЛР 3.2: генерация тестового трафика</h1></header>
+<main>
+<p>Браузерный аналог сценария k6 (<a href="k6-test.js">k6-test.js</a>): разгон до 10 виртуальных пользователей за 1 мин, удержание 2 мин, спад за 1 мин. Каждый пользователь в цикле запрашивает <code>/</code> и <code>/image.jpg</code>, затем ждёт 1 секунду.</p>
+<p><button id="start">Запустить тест</button> <span id="state">ожидание</span></p>
+<div id="bar"><div></div></div>
+<table>
+<tr><th>Прошло, с</th><td id="el">0</td><th>Активных VU</th><td id="vu">0</td></tr>
+<tr><th>Запросов</th><td id="req">0</td><th>Ошибок</th><td id="err">0</td></tr>
+<tr><th>RPS (текущий)</th><td id="rps">0</td><th>Средняя задержка, мс</th><td id="avg">0</td></tr>
+<tr><th>p95 задержки, мс</th><td id="p95">0</td><th>Edge (cf-ray)</th><td id="colo">—</td></tr>
+</table>
+<h3>По URL</h3>
+<table id="urls"><tr><th>URL</th><th>Запросов</th><th>Ошибок</th><th>Средн. мс</th><th>Байт</th></tr></table>
+<h3>Итог (JSON)</h3>
+<pre id="out">—</pre>
+<p><a href="../index.html">← Вернуться на главную</a></p>
+</main>
+<script>
+const STAGES=[{d:60,t:10},{d:120,t:10},{d:60,t:0}];
+const TOTAL=STAGES.reduce((s,x)=>s+x.d,0);
+const URLS=['/','/image.jpg'];
+const S={req:0,err:0,lat:[],per:{},colos:{},secs:[],start:0,running:false};
+const $=id=>document.getElementById(id);
+function target(el){let acc=0,prev=0;for(const s of STAGES){if(el<acc+s.d)return Math.round(prev+(s.t-prev)*(el-acc)/s.d);acc+=s.d;prev=s.t}return 0}
+async function hit(u){const t=performance.now();let ok=false,b=0;
+ try{const r=await fetch(u+(u.includes('?')?'&':'?')+'r='+Math.random(),{cache:'no-store'});const buf=await r.arrayBuffer();b=buf.byteLength;ok=r.ok;
+  const ray=r.headers.get('cf-ray');if(ray){const c=ray.split('-').pop();S.colos[c]=(S.colos[c]||0)+1}}catch(e){}
+ const ms=performance.now()-t;S.req++;if(!ok)S.err++;S.lat.push(ms);S.secs.push(Date.now());
+ const p=S.per[u]||(S.per[u]={n:0,e:0,ms:0,b:0});p.n++;if(!ok)p.e++;p.ms+=ms;p.b+=b}
+async function vu(id,vus){while(S.running&&id<vus.n){for(const u of URLS)await hit(u);await new Promise(r=>setTimeout(r,1000))}vus.alive--}
+function pct(a,q){if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.floor(q*s.length))]}
+function render(){const el=(Date.now()-S.start)/1000;$('el').textContent=el.toFixed(0);$('req').textContent=S.req;$('err').textContent=S.err;
+ const now=Date.now();$('rps').textContent=S.secs.filter(t=>now-t<5000).length/5;
+ $('avg').textContent=S.lat.length?(S.lat.reduce((a,b)=>a+b,0)/S.lat.length).toFixed(0):0;$('p95').textContent=pct(S.lat,0.95).toFixed(0);
+ $('colo').textContent=Object.entries(S.colos).map(([k,v])=>k+': '+v).join(', ')||'—';
+ $('bar').firstElementChild.style.width=Math.min(100,el/TOTAL*100)+'%';
+ const t=$('urls');t.querySelectorAll('tr.d').forEach(r=>r.remove());
+ for(const[u,p]of Object.entries(S.per)){const r=t.insertRow();r.className='d';r.innerHTML=`<td>${u}</td><td>${p.n}</td><td>${p.e}</td><td>${(p.ms/p.n).toFixed(0)}</td><td>${p.b}</td>`}}
+function summary(){return{started:new Date(S.start).toISOString(),duration_s:Math.round((Date.now()-S.start)/1000),requests:S.req,errors:S.err,
+ avg_ms:+(S.lat.reduce((a,b)=>a+b,0)/Math.max(1,S.lat.length)).toFixed(1),p50_ms:+pct(S.lat,0.5).toFixed(1),p95_ms:+pct(S.lat,0.95).toFixed(1),
+ edge_colos:S.colos,per_url:Object.fromEntries(Object.entries(S.per).map(([u,p])=>[u,{requests:p.n,errors:p.e,avg_ms:+(p.ms/p.n).toFixed(1),bytes:p.b}]))}}
+$('start').onclick=()=>{if(S.running)return;S.running=true;S.start=Date.now();$('state').textContent='тест идёт…';
+ const vus={n:0,alive:0};let next=0;
+ const tick=setInterval(()=>{const el=(Date.now()-S.start)/1000;const want=target(el);
+  while(next<want){vus.alive++;vu(next++,vus)}vus.n=want;if(want<next)next=want;render();
+  if(el>=TOTAL){S.running=false;clearInterval(tick);render();$('state').textContent='тест завершён';$('out').textContent=JSON.stringify(summary(),null,2);window.LOADTEST_RESULT=summary()}
+  $('vu').textContent=want},1000)};
+window.LOADTEST=S;
+</script>
+</body>
+</html>

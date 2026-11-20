@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЛР 3.3 — замеры TTFB</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+ table{border-collapse:collapse;width:100%;margin:10px 0}
+ td,th{border:1px solid #ccc;padding:4px 8px;text-align:left;font-size:14px}
+ button{padding:8px 16px;font-size:15px}
+ pre{background:#111;color:#0f0;padding:10px;font-size:12px;max-height:260px;overflow:auto}
+</style>
+</head>
+<body>
+<header><h1>ЛР 3.3: динамический контент через CDN</h1></header>
+<main>
+<p>Аналог замеров <code>curl -w "%{time_connect} %{time_starttransfer} %{time_total}"</code>: для каждого URL выполняется 5 запросов, по Resource Timing API считаются время соединения, TTFB (время до первого байта) и общее время.</p>
+<p>Хост: <b id="host"></b> <button id="run">Запустить замеры</button> <span id="state"></span></p>
+<table id="t"><tr><th>URL</th><th>Тип</th><th>Соединение, мс</th><th>TTFB медиана, мс</th><th>Общее, мс</th><th>Протокол</th><th>Сжатие</th><th>Edge</th></tr></table>
+<pre id="out">—</pre>
+<p><a href="../index.html">← Вернуться на главную</a></p>
+</main>
+<script>
+const onPages=location.hostname.endsWith('pages.dev');
+document.getElementById('host').textContent=location.hostname+(onPages?' (через Cloudflare)':' (Origin, напрямую)');
+const TESTS=[['/index.html','статика (HTML)'],['/style.css','статика (CSS)'],['/image.jpg','статика (изображение)']];
+if(onPages)TESTS.push(['/api/fast','динамика, без задержки'],['/api/time','динамика, задержка 1 с'],['/api/origin','edge → Origin (GitHub Pages)']);
+const med=a=>{const s=[...a].sort((x,y)=>x-y);return s[Math.floor(s.length/2)]};
+async function measure(path){const conn=[],ttfb=[],total=[];let proto='',enc='',colo='',extra=null;
+ for(let i=0;i<5;i++){const u=path+'?m='+Date.now()+'_'+i;const r=await fetch(u,{cache:'no-store'});const txt=await r.text();
+  if(path.startsWith('/api/'))try{extra=JSON.parse(txt)}catch(e){}
+  enc=r.headers.get('content-encoding')||'нет';colo=(r.headers.get('cf-ray')||'').split('-').pop()||'—';
+  await new Promise(r=>setTimeout(r,50));
+  const e=performance.getEntriesByName(new URL(u,location.href).href).pop();
+  if(e){conn.push(e.connectEnd-e.connectStart);ttfb.push(e.responseStart-e.startTime);total.push(e.responseEnd-e.startTime);proto=e.nextHopProtocol}}
+ return{path,connect_ms:+med(conn).toFixed(1),ttfb_ms:+med(ttfb).toFixed(1),total_ms:+med(total).toFixed(1),ttfb_all:ttfb.map(x=>+x.toFixed(0)),protocol:proto,encoding:enc,edge:colo,api:extra}}
+document.getElementById('run').onclick=async()=>{const st=document.getElementById('state');st.textContent='идут замеры…';const res=[];
+ const t=document.getElementById('t');t.querySelectorAll('tr.d').forEach(r=>r.remove());
+ for(const[p,kind]of TESTS){const m=await measure(p);m.kind=kind;res.push(m);const r=t.insertRow();r.className='d';
+  r.innerHTML=`<td>${p}</td><td>${kind}</td><td>${m.connect_ms}</td><td><b>${m.ttfb_ms}</b></td><td>${m.total_ms}</td><td>${m.protocol}</td><td>${m.encoding}</td><td>${m.edge}</td>`}
+ const out={host:location.hostname,time:new Date().toISOString(),results:res};document.getElementById('out').textContent=JSON.stringify(out,null,2);window.SPEED_RESULT=out;st.textContent='готово'};
+</script>
+</body>
+</html>
